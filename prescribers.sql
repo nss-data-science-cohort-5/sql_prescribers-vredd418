@@ -38,16 +38,28 @@ GROUP BY specialty_description
 ORDER BY SUM(total_claim_count) DESC
 LIMIT 1;
 
-/* 3. a. Which drug (generic_name) had the highest total drug cost? -- PIRFENIDONE, $2829174.30
+SELECT npi, speciality_description, opioid_drug_flag
+
+
+/* 3. a. Which drug (generic_name) had the highest total drug cost? -- INSULIN GLARGINE,HUM.REC.ANLOG, $104264066.35 
 
     b. Which drug (generic_name) has the hightest total cost per day? **Bonus: Round your cost per day column to 2 decimal places. Google ROUND to see how this works. -- IMMUN GLOB G(IGG)/GLY/IGA OV50, $ 7141.11 per day */
 	
-SELECT generic_name, total_drug_cost
+SELECT generic_name, SUM(total_drug_cost)
 FROM prescription
 LEFT JOIN drug
 USING(drug_name)
+GROUP BY generic_name
 ORDER BY 2 DESC
 LIMIT 1;
+
+-- Alex's answer. Probably the correct one.
+SELECT generic_name, SUM(total_drug_cost)
+FROM prescription
+LEFT JOIN drug
+USING (drug_name)
+GROUP BY generic_name
+ORDER BY 2 DESC;
 
 SELECT generic_name, ROUND(total_drug_cost/total_day_supply, 2)
 FROM prescription
@@ -55,6 +67,15 @@ LEFT JOIN drug
 USING(drug_name)
 ORDER BY 2 DESC
 LIMIT 1;
+
+-- Alex's answer again.
+SELECT generic_name, ROUND(SUM(total_drug_cost)/SUM(total_day_supply), 2)
+FROM prescription
+LEFT JOIN drug
+USING (drug_name)
+GROUP BY generic_name
+ORDER BY 2 DESC;
+
 
 /* 4. a. For each drug in the drug table, return the drug name and then a column named 'drug_type' which says 'opioid' for drugs which have opioid_drug_flag = 'Y', says 'antibiotic' for those drugs which have antibiotic_drug_flag = 'Y', and says 'neither' for all other drugs.
 
@@ -73,23 +94,34 @@ GROUP BY sub.drug_type
 ORDER BY SUM(total_drug_cost) DESC;
 
 
-/* 5. a. How many CBSAs are in Tennessee? **Warning:** The cbsa table contains information for all states, not just Tennessee. -- 6 CBSAs
+/* 5. a. How many CBSAs are in Tennessee? **Warning:** The cbsa table contains information for all states, not just Tennessee. -- 10 CBSAs
 
-    b. Which cbsa has the largest combined population? Which has the smallest? Report the CBSA name and total population. -- Smallest was CBSA 34100 with 116352, Largest, CBSA 34980 with 1830410.
+    b. Which cbsa has the largest combined population? Which has the smallest? Report the CBSA name and total population. -- Smallest was Morristown with 116352, Largest, Nashville-Davidson--Murfreesboro--Franklin, TN with 1830410.
 
-    c. What is the largest (in terms of population) county which is not included in a CBSA? Report the county name and population. */
+    c. What is the largest (in terms of population) county which is not included in a CBSA? Report the county name and population. */ -- SEVIER County, 95523
 	
 SELECT COUNT(DISTINCT cbsa)
 FROM cbsa
-WHERE cbsaname LIKE '%, TN';
+WHERE cbsaname LIKE '%TN%';
 
-SELECT cbsa, SUM(population) AS sum_pop
+SELECT cbsaname, SUM(population) AS sum_pop
 FROM cbsa
 JOIN population
 USING(fipscounty)
-GROUP BY cbsa
+GROUP BY cbsaname
 ORDER BY sum_pop;
 
+SELECT sub.cbsa, sub.county, sub.population
+FROM 
+	(SELECT fipscounty, population, county, cbsa
+	 FROM fips_county
+	 JOIN population
+	 USING(fipscounty)
+	 LEFT JOIN cbsa
+	 USING(fipscounty)) AS sub
+WHERE cbsa IS NULL
+ORDER BY sub.population DESC
+LIMIT 1;
 
 
 /* 6. 
@@ -119,13 +151,34 @@ WHERE total_claim_count >= 3000
     
     c. Finally, if you have not done so already, fill in any missing values for total_claim_count with 0. Hint - Google the COALESCE function. */
 	
-SELECT npi, speciality_description, drug_name
-FROM prescription
-CROSS JOIN prescriber
-USING(npi)
-LEFT JOIN drug
-USING(drug_name)
-WHERE specialty_description = 'Pain Management'
+
+SELECT prescriber.npi, drug.drug_name
+FROM prescriber
+CROSS JOIN drug
+FULL JOIN prescription
+
+
+-- Jacob
+SELECT p1.npi, d.drug_name, COALESCE(total_claim_count, 0) AS total_claims
+FROM prescriber AS p1
+CROSS JOIN drug AS d
+FULL JOIN prescription AS p2
+USING (drug_name, npi)
+WHERE specialty_description = 'Pain Management' 
 AND nppes_provider_city = 'NASHVILLE'
 AND opioid_drug_flag = 'Y'
-	
+ORDER BY total_claims DESC;
+
+-- Alex
+SELECT npi, prescription.drug_name, COALESCE(total_claim_count, 0) AS total_claim_count
+FROM (
+SELECT npi, drug_name
+FROM prescriber
+CROSS JOIN drug
+WHERE specialty_description = 'Pain Management'
+	AND nppes_provider_city = 'NASHVILLE'
+	AND opioid_drug_flag = 'Y'
+) as npi_drug
+LEFT JOIN prescription
+USING(npi, drug_name);
+
